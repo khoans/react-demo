@@ -63,6 +63,10 @@ runs:
       run: |
         echo "sha_short=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
         echo "timestamp=$(date +%s)" >> $GITHUB_OUTPUT
+        # Sanitize branch name for Docker tag (replace / and other invalid chars with -)
+        BRANCH_NAME="${{ github.ref_name }}"
+        SAFE_BRANCH=$(echo "$BRANCH_NAME" | sed 's/[^a-zA-Z0-9._-]/-/g')
+        echo "safe_branch=$SAFE_BRANCH" >> $GITHUB_OUTPUT
 
     - name: Build and push Docker image
       id: push
@@ -74,7 +78,7 @@ runs:
         tags: |
           ${{ steps.login-ecr.outputs.registry }}/${{ inputs.ecr-repository }}:latest
           ${{ steps.login-ecr.outputs.registry }}/${{ inputs.ecr-repository }}:${{ steps.meta.outputs.sha_short }}
-          ${{ steps.login-ecr.outputs.registry }}/${{ inputs.ecr-repository }}:${{ github.ref_name }}-${{ steps.meta.outputs.timestamp }}
+          ${{ steps.login-ecr.outputs.registry }}/${{ inputs.ecr-repository }}:${{ steps.meta.outputs.safe_branch }}-${{ steps.meta.outputs.timestamp }}
           ${{ inputs.additional-tags }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
@@ -99,7 +103,7 @@ runs:
         echo "### 🏷️ Tags Pushed" >> $GITHUB_STEP_SUMMARY
         echo "- \`latest\`" >> $GITHUB_STEP_SUMMARY
         echo "- \`${{ steps.meta.outputs.sha_short }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "- \`${{ github.ref_name }}-${{ steps.meta.outputs.timestamp }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- \`${{ steps.meta.outputs.safe_branch }}-${{ steps.meta.outputs.timestamp }}\`" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 📝 Image URI" >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
