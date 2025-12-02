@@ -1,7 +1,8 @@
 import { Link, useParams } from '@tanstack/react-router';
 
 function VehicleDetailPage() {
-  const { vehicleId } = useParams({ from: '/vehicle/$vehicleId' });
+  const { vehicleId } = useParams({ from: '/_page/vehicle/$vehicleId' });
+  console.log("vehicleId", vehicleId);
 
   // Sample vehicle details based on ID
   const vehicleDetails: Record<string, { name: string; price: string; description: string; specs: string[] }> = {
