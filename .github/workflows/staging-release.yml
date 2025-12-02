@@ -5,7 +5,14 @@ on:
     branches:
       - master
       - main
+      - develop
+      - staging
   workflow_dispatch:
+
+env:
+  AWS_REGION: ap-southeast-2
+  ECR_REPOSITORY: react-demo
+  EB_ENVIRONMENT: react-demo-nonprod
 
 jobs:
   deploy-staging:
@@ -31,8 +38,37 @@ jobs:
       - name: Run tests
         run: npm test -- --passWithNoTests
 
-      - name: Build application
-        run: npm run build
+      - name: Build and Push Docker Image to ECR
+        id: docker-push
+        uses: ./.github/actions/docker-ecr-push
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          ecr-repository: ${{ env.ECR_REPOSITORY }}
+          dockerfile: ./Dockerfile_aws
+          context: .
+
+      - name: Generate Dockerrun.aws.json
+        run: |
+          cat > Dockerrun.aws.json << EOF
+          {
+            "AWSEBDockerrunVersion": "1",
+            "Image": {
+              "Name": "${{ steps.docker-push.outputs.image-uri }}",
+              "Update": "true"
+            },
+            "Ports": [
+              {
+                "ContainerPort": 3000,
+                "HostPort": 80
+              }
+            ],
+            "Logging": "/var/log/nginx"
+          }
+          EOF
+          echo "Generated Dockerrun.aws.json:"
+          cat Dockerrun.aws.json
 
       - name: Copy staging config
         run: |
@@ -40,13 +76,6 @@ jobs:
           cp configs/nonprod/cfg.yml .ebextensions/cfg.yml
           echo "Config copied:"
           cat .ebextensions/cfg.yml
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-southeast-2
 
       - name: Install EB CLI
         run: |
@@ -57,39 +86,39 @@ jobs:
         run: |
           if [ ! -f .elasticbeanstalk/config.yml ]; then
             eb init react-demo \
-              --platform "Node.js 24 running on 64bit Amazon Linux 2023" \
-              --region ap-southeast-2
+              --platform "Docker running on 64bit Amazon Linux 2023" \
+              --region ${{ env.AWS_REGION }}
           fi
 
       - name: Check if staging environment exists
         id: check_env
         run: |
-          if eb list | grep -q "staging-env"; then
+          if eb list | grep -q "${{ env.EB_ENVIRONMENT }}"; then
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "✅ Environment staging-env exists"
+            echo "✅ Environment ${{ env.EB_ENVIRONMENT }} exists"
           else
             echo "exists=false" >> $GITHUB_OUTPUT
-            echo "❌ Environment staging-env does not exist"
+            echo "❌ Environment ${{ env.EB_ENVIRONMENT }} does not exist"
           fi
 
       - name: Create environment (if needed)
         if: steps.check_env.outputs.exists == 'false'
         run: |
-          echo "Creating environment: staging-env"
-          eb create staging-env \
+          echo "Creating environment: ${{ env.EB_ENVIRONMENT }}"
+          eb create ${{ env.EB_ENVIRONMENT }} \
             --single \
             --instance-types t3.micro \
             --timeout 20
 
-      - name: Deploy to Staging
+      - name: Deploy to Elastic Beanstalk
         run: |
-          echo "🚀 Deploying to staging-env"
-          eb deploy staging-env --timeout 20
+          echo "🚀 Deploying Docker image to ${{ env.EB_ENVIRONMENT }}"
+          eb deploy ${{ env.EB_ENVIRONMENT }} --timeout 20
 
       - name: Get environment URL
         id: url
         run: |
-          URL=$(eb status staging-env | grep CNAME | awk '{print $2}')
+          URL=$(eb status ${{ env.EB_ENVIRONMENT }} | grep CNAME | awk '{print $2}')
           echo "url=http://$URL" >> $GITHUB_OUTPUT
           echo "🌐 Application URL: http://$URL"
 
@@ -98,15 +127,21 @@ jobs:
           echo "## 🎉 Staging Deployment Successful!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** staging/nonprod" >> $GITHUB_STEP_SUMMARY
-          echo "**EB Environment:** staging-env" >> $GITHUB_STEP_SUMMARY
+          echo "**EB Environment:** ${{ env.EB_ENVIRONMENT }}" >> $GITHUB_STEP_SUMMARY
           echo "**URL:** ${{ steps.url.outputs.url }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Config:** configs/nonprod/cfg.yml" >> $GITHUB_STEP_SUMMARY
+          echo "**Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "**ECR Repository:** ${{ env.ECR_REPOSITORY }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Docker Image:** ${{ steps.docker-push.outputs.image-uri }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image Tag:** ${{ steps.docker-push.outputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Files Deployed" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ dist/ (built React app)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ src/server.js (Express server)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ package.production.json (minimal deps)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ .ebextensions/cfg.yml (from configs/nonprod/cfg.yml)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ .platform/hooks/" >> $GITHUB_STEP_SUMMARY
-
+          echo "### 🐳 Docker Image" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.docker-push.outputs.image-uri }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Deployment Details" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Docker image built and pushed to ECR" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Dockerrun.aws.json generated" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Deployed to Elastic Beanstalk" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Container port 3000 mapped to host port 80" >> $GITHUB_STEP_SUMMARY

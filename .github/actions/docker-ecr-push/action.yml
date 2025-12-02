@@ -1,0 +1,107 @@
+name: 'Build and Push Docker Image to ECR'
+description: 'Builds a Docker image and pushes it to Amazon ECR with multiple tags'
+author: 'Your Team'
+
+inputs:
+  aws-access-key-id:
+    description: 'AWS Access Key ID'
+    required: true
+  aws-secret-access-key:
+    description: 'AWS Secret Access Key'
+    required: true
+  aws-region:
+    description: 'AWS Region'
+    required: false
+    default: 'ap-southeast-2'
+  ecr-repository:
+    description: 'ECR Repository name'
+    required: true
+  dockerfile:
+    description: 'Path to Dockerfile'
+    required: false
+    default: './Dockerfile_aws'
+  context:
+    description: 'Build context path'
+    required: false
+    default: '.'
+  additional-tags:
+    description: 'Additional tags (comma-separated)'
+    required: false
+    default: ''
+
+outputs:
+  image-uri:
+    description: 'Full URI of the pushed Docker image with latest tag'
+    value: ${{ steps.set-output.outputs.image-uri }}
+  image-tag:
+    description: 'Short SHA tag of the image'
+    value: ${{ steps.meta.outputs.sha_short }}
+  registry:
+    description: 'ECR Registry URL'
+    value: ${{ steps.login-ecr.outputs.registry }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ inputs.aws-access-key-id }}
+        aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Extract metadata for Docker
+      id: meta
+      shell: bash
+      run: |
+        echo "sha_short=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+        echo "timestamp=$(date +%s)" >> $GITHUB_OUTPUT
+
+    - name: Build and push Docker image
+      id: push
+      uses: docker/build-push-action@v5
+      with:
+        context: ${{ inputs.context }}
+        file: ${{ inputs.dockerfile }}
+        push: true
+        tags: |
+          ${{ steps.login-ecr.outputs.registry }}/${{ inputs.ecr-repository }}:latest
+          ${{ steps.login-ecr.outputs.registry }}/${{ inputs.ecr-repository }}:${{ steps.meta.outputs.sha_short }}
+          ${{ steps.login-ecr.outputs.registry }}/${{ inputs.ecr-repository }}:${{ github.ref_name }}-${{ steps.meta.outputs.timestamp }}
+          ${{ inputs.additional-tags }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Set image URI output
+      id: set-output
+      shell: bash
+      run: |
+        echo "image-uri=${{ steps.login-ecr.outputs.registry }}/${{ inputs.ecr-repository }}:latest" >> $GITHUB_OUTPUT
+
+    - name: Deployment summary
+      shell: bash
+      run: |
+        echo "## 🐳 Docker Image Pushed to ECR" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Registry:** ${{ steps.login-ecr.outputs.registry }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Repository:** ${{ inputs.ecr-repository }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Region:** ${{ inputs.aws-region }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🏷️ Tags Pushed" >> $GITHUB_STEP_SUMMARY
+        echo "- \`latest\`" >> $GITHUB_STEP_SUMMARY
+        echo "- \`${{ steps.meta.outputs.sha_short }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- \`${{ github.ref_name }}-${{ steps.meta.outputs.timestamp }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📝 Image URI" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "${{ steps.login-ecr.outputs.registry }}/${{ inputs.ecr-repository }}:latest" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

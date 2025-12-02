@@ -7,13 +7,17 @@ on:
       - master
       - main
 
+env:
+  AWS_REGION: ap-southeast-2
+  ECR_REPOSITORY: react-demo
+
 jobs:
   deploy-pr:
     name: Deploy PR Environment
     runs-on: ubuntu-latest
 
     environment:
-      name: pr
+      name: nonprod
 
     steps:
       - name: Checkout code
@@ -31,8 +35,16 @@ jobs:
       - name: Run tests
         run: npm test -- --passWithNoTests
 
-      - name: Build application
-        run: npm run build
+      - name: Build and Push Docker Image to ECR
+        id: docker-push
+        uses: ./.github/actions/docker-ecr-push
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          ecr-repository: ${{ env.ECR_REPOSITORY }}
+          dockerfile: ./Dockerfile_aws
+          context: .
 
       - name: Set environment name
         id: env
@@ -41,19 +53,33 @@ jobs:
           echo "eb_environment=$PR_ENV" >> $GITHUB_OUTPUT
           echo "🎯 PR Environment: $PR_ENV"
 
+      - name: Generate Dockerrun.aws.json
+        run: |
+          cat > Dockerrun.aws.json << EOF
+          {
+            "AWSEBDockerrunVersion": "1",
+            "Image": {
+              "Name": "${{ steps.docker-push.outputs.image-uri }}",
+              "Update": "true"
+            },
+            "Ports": [
+              {
+                "ContainerPort": 3000,
+                "HostPort": 80
+              }
+            ],
+            "Logging": "/var/log/nginx"
+          }
+          EOF
+          echo "Generated Dockerrun.aws.json:"
+          cat Dockerrun.aws.json
+
       - name: Copy PR config
         run: |
           echo "📦 Using PR configuration"
           cp configs/pr/cfg.yml .ebextensions/cfg.yml
           echo "Config copied:"
           cat .ebextensions/cfg.yml
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-southeast-2
 
       - name: Install EB CLI
         run: |
@@ -64,8 +90,8 @@ jobs:
         run: |
           if [ ! -f .elasticbeanstalk/config.yml ]; then
             eb init react-demo \
-              --platform "Node.js 24 running on 64bit Amazon Linux 2023" \
-              --region ap-southeast-2
+              --platform "Docker running on 64bit Amazon Linux 2023" \
+              --region ${{ env.AWS_REGION }}
           fi
 
       - name: Check if PR environment exists
@@ -88,9 +114,9 @@ jobs:
             --instance-types t3.micro \
             --timeout 20
 
-      - name: Deploy to PR environment
+      - name: Deploy to Elastic Beanstalk
         run: |
-          echo "🚀 Deploying to ${{ steps.env.outputs.eb_environment }}"
+          echo "🚀 Deploying Docker image to ${{ steps.env.outputs.eb_environment }}"
           eb deploy ${{ steps.env.outputs.eb_environment }} --timeout 20
 
       - name: Get environment URL
@@ -100,45 +126,66 @@ jobs:
           echo "url=http://$URL" >> $GITHUB_OUTPUT
           echo "🌐 Application URL: http://$URL"
 
-      - name: Comment PR with deployment URL
+      - name: Comment PR with deployment info
         uses: actions/github-script@v7
         with:
           script: |
+            const message = `## 🚀 PR Docker Image Built and Deployed!
+            
+            **Environment:** \`${{ steps.env.outputs.eb_environment }}\`
+            **URL:** ${{ steps.url.outputs.url }}
+            **Docker Image:** \`${{ steps.docker-push.outputs.image-uri }}\`
+            **Image Tag:** \`${{ steps.docker-push.outputs.image-tag }}\`
+            
+            ### 🌐 Access the PR environment:
+            \`\`\`
+            ${{ steps.url.outputs.url }}
+            \`\`\`
+            
+            ### 🐳 Pull and run locally:
+            \`\`\`bash
+            docker pull ${{ steps.docker-push.outputs.image-uri }}
+            docker run -p 3000:3000 ${{ steps.docker-push.outputs.image-uri }}
+            \`\`\`
+            
+            **Note:** This environment will need to be manually cleaned up when the PR is closed.
+            
+            To destroy this environment:
+            \`\`\`bash
+            eb terminate ${{ steps.env.outputs.eb_environment }} --force
+            \`\`\`
+            `;
+            
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `## 🚀 PR Environment Deployed!
+              body: message
+            });
 
-**Environment:** \`${{ steps.env.outputs.eb_environment }}\`
-**URL:** ${{ steps.url.outputs.url }}
-**Config used:** \`configs/pr/cfg.yml\`
-
-This environment will need to be manually cleaned up when the PR is closed.
-
-To destroy this environment:
-\`\`\`bash
-eb terminate ${{ steps.env.outputs.eb_environment }} --force
-\`\`\`
-`
-            })
-      
       - name: Deployment summary
         run: |
-          echo "## 🎉 PR Environment Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "## 🎉 PR Docker Image Deployment Successful!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** PR #${{ github.event.pull_request.number }}" >> $GITHUB_STEP_SUMMARY
           echo "**EB Environment:** ${{ steps.env.outputs.eb_environment }}" >> $GITHUB_STEP_SUMMARY
           echo "**URL:** ${{ steps.url.outputs.url }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Config:** configs/pr/cfg.yml" >> $GITHUB_STEP_SUMMARY
+          echo "**Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "**ECR Repository:** ${{ env.ECR_REPOSITORY }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Docker Image:** ${{ steps.docker-push.outputs.image-uri }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image Tag:** ${{ steps.docker-push.outputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Files Deployed" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ dist/ (built React app)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ src/server.js (Express server)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ package.production.json (minimal deps)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ .ebextensions/cfg.yml (from configs/pr/cfg.yml)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ .platform/hooks/" >> $GITHUB_STEP_SUMMARY
+          echo "### 🐳 Docker Image" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.docker-push.outputs.image-uri }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Deployment Details" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Docker image built and pushed to ECR" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Dockerrun.aws.json generated" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Deployed to Elastic Beanstalk" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Container port 3000 mapped to host port 80" >> $GITHUB_STEP_SUMMARY
 
   cleanup-pr:
     name: Cleanup PR Environment
@@ -165,7 +212,7 @@ eb terminate ${{ steps.env.outputs.eb_environment }} --force
         run: |
           if [ ! -f .elasticbeanstalk/config.yml ]; then
             eb init react-demo \
-              --platform "Node.js 24 running on 64bit Amazon Linux 2023" \
+              --platform "Docker running on 64bit Amazon Linux 2023" \
               --region ap-southeast-2
           fi
 
@@ -191,5 +238,4 @@ eb terminate ${{ steps.env.outputs.eb_environment }} --force
               owner: context.repo.owner,
               repo: context.repo.repo,
               body: `## 🧹 PR Environment Cleaned Up\n\n**Environment:** \`react-demo-pr-${{ github.event.pull_request.number }}\` has been terminated.`
-            })
-
+            });
