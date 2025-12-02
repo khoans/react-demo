@@ -108,6 +108,7 @@ jobs:
           eb create ${{ env.EB_ENVIRONMENT }} \
             --single \
             --instance-types t3.micro \
+            --instance-profile aws-elasticbeanstalk-ec2-role-docker \
             --timeout 20
 
       - name: Deploy to Elastic Beanstalk
