@@ -75,6 +75,8 @@ jobs:
           echo "📦 Using staging/nonprod configuration"
           cp configs/nonprod/cfg.yml .ebextensions/cfg.yml
           echo "Config copied"
+          echo "📋 .ebextensions files:"
+          ls -la .ebextensions/
 
       - name: Install EB CLI
         run: |

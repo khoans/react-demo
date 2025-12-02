@@ -79,6 +79,8 @@ jobs:
           echo "📦 Using PR configuration"
           cp configs/pr/cfg.yml .ebextensions/cfg.yml
           echo "Config copied"
+          echo "📋 .ebextensions files:"
+          ls -la .ebextensions/
 
       - name: Install EB CLI
         run: |
