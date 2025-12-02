@@ -1,4 +1,4 @@
-class BrowserStorageUtil implements KeyValueStorage {
+export class BrowserStorageUtil implements KeyValueStorage {
     private storage: Storage;
 
     constructor(storage: Storage = localStorage) {
