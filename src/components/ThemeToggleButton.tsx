@@ -2,12 +2,11 @@ import {useTheme} from "../contexts/ThemeContext";
 
 function ThemeToggleButton() {
     const {theme, toggleTheme} = useTheme();
-
-    const displayTheme = theme === 'light' ? 'Light' : 'Dark';
+    console.log("Current theme in button:", theme === 'light');
 
     return (
         <button onClick={toggleTheme}>
-            Switch to {displayTheme} Theme
+            Switch to {theme === 'light' ? 'Dark' : 'Light'} Theme
         </button>
     );
 }

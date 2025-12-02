@@ -38,7 +38,7 @@ module.exports = {
     collectCoverageFrom: [
         'src/**/*.{ts,tsx}',
         '!src/**/*.d.ts',
-        '!src/main.tsx',
+        '!src/Main.tsx',
         '!src/routeTree.gen.ts',
     ],
     coverageDirectory: 'coverage',

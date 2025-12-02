@@ -25,3 +25,9 @@ routeTree.gen.ts
 *.njsproj
 *.sln
 *.sw?
+
+# Elastic Beanstalk Files
+.elasticbeanstalk/*
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml
+

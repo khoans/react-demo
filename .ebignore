@@ -1,0 +1,34 @@
+# Elastic Beanstalk - Deploy only production files
+# IMPORTANT: This file uses git-style patterns
+# Use ! to explicitly include files/folders
+
+# Exclude everything by default
+*
+
+# Then include only what we need
+!dist/
+!dist/**
+!src/
+!src/server.js
+!package.json
+!package-lock.json
+!.ebextensions/
+!.ebextensions/**
+!.platform/
+!.platform/**
+!.elasticbeanstalk/
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml
+
+# Exclude source files from src/
+src/*
+!src/server.js
+
+# Always exclude these
+node_modules/
+.git/
+*.log
+
+
+
+

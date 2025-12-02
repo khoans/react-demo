@@ -1,0 +1,30 @@
+option_settings:
+  # Single Instance Configuration (No Auto Scaling)
+  aws:elasticbeanstalk:environment:
+    EnvironmentType: SingleInstance
+
+  # Health Check Configuration
+  aws:elasticbeanstalk:application:
+    Application Healthcheck URL: /
+
+  # Instance Type
+  aws:ec2:instances:
+    InstanceTypes: t3.micro
+
+  # Node.js Configuration
+  aws:elasticbeanstalk:container:nodejs:
+    NodeCommand: "npm start"
+
+  # Environment Variables
+  aws:elasticbeanstalk:application:environment:
+    NODE_ENV: production
+    PORT: 8080
+
+files:
+  "/etc/nginx/conf.d/proxy.conf":
+    mode: "000644"
+    owner: root
+    group: root
+    content: |
+      client_max_body_size 20M;
+
