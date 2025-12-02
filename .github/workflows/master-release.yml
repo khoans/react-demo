@@ -1,0 +1,112 @@
+name: Master Release (Production)
+          echo "- ✅ .platform/hooks/" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ .ebextensions/cfg.yml (from configs/prod/cfg.yml)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ package.production.json (minimal deps)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ src/server.js (Express server)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ dist/ (built React app)" >> $GITHUB_STEP_SUMMARY
+          echo "### Files Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Config:** configs/prod/cfg.yml" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** ${{ steps.url.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**EB Environment:** production-env" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** production" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🎉 Production Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+        run: |
+      - name: Deployment summary
+
+          echo "🌐 Application URL: http://$URL"
+          echo "url=http://$URL" >> $GITHUB_OUTPUT
+          URL=$(eb status production-env | grep CNAME | awk '{print $2}')
+        run: |
+        id: url
+      - name: Get environment URL
+      
+          eb deploy production-env --timeout 20
+          echo "🚀 Deploying to production-env"
+        run: |
+      - name: Deploy to Production
+      
+            --timeout 20
+            --instance-types t3.micro \
+            --single \
+          eb create production-env \
+          echo "Creating environment: production-env"
+        run: |
+        if: steps.check_env.outputs.exists == 'false'
+      - name: Create environment (if needed)
+      
+          fi
+            echo "❌ Environment production-env does not exist"
+            echo "exists=false" >> $GITHUB_OUTPUT
+          else
+            echo "✅ Environment production-env exists"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          if eb list | grep -q "production-env"; then
+        run: |
+        id: check_env
+      - name: Check if production environment exists
+      
+          fi
+              --region ap-southeast-2
+              --platform "Node.js 24 running on 64bit Amazon Linux 2023" \
+            eb init react-demo \
+          if [ ! -f .elasticbeanstalk/config.yml ]; then
+        run: |
+      - name: Initialize Elastic Beanstalk
+      
+          pip install awsebcli
+          pip install --upgrade pip
+        run: |
+      - name: Install EB CLI
+
+          aws-region: ap-southeast-2
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        with:
+        uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials
+      
+          cat .ebextensions/cfg.yml
+          echo "Config copied:"
+          cp configs/prod/cfg.yml .ebextensions/cfg.yml
+          echo "📦 Using production configuration"
+        run: |
+      - name: Copy production config
+
+        run: npm run build
+      - name: Build application
+
+        run: npm test -- --passWithNoTests
+      - name: Run tests
+
+        run: npm ci
+      - name: Install dependencies
+
+          cache: 'npm'
+          node-version: '24'
+        with:
+        uses: actions/setup-node@v4
+      - name: Setup Node.js
+
+        uses: actions/checkout@v4
+      - name: Checkout code
+    steps:
+
+      name: prod
+    environment:
+
+    runs-on: ubuntu-latest
+    name: Deploy to Production
+  deploy-production:
+jobs:
+
+  workflow_dispatch:
+      - main
+      - master
+    branches:
+  push:
+on:
+
+

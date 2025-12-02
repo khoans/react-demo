@@ -1,0 +1,195 @@
+name: PR Release
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - master
+      - main
+
+jobs:
+  deploy-pr:
+    name: Deploy PR Environment
+    runs-on: ubuntu-latest
+
+    environment:
+      name: pr
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test -- --passWithNoTests
+
+      - name: Build application
+        run: npm run build
+
+      - name: Set environment name
+        id: env
+        run: |
+          PR_ENV="react-demo-pr-${{ github.event.pull_request.number }}"
+          echo "eb_environment=$PR_ENV" >> $GITHUB_OUTPUT
+          echo "🎯 PR Environment: $PR_ENV"
+
+      - name: Copy PR config
+        run: |
+          echo "📦 Using PR configuration"
+          cp configs/pr/cfg.yml .ebextensions/cfg.yml
+          echo "Config copied:"
+          cat .ebextensions/cfg.yml
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-southeast-2
+
+      - name: Install EB CLI
+        run: |
+          pip install --upgrade pip
+          pip install awsebcli
+
+      - name: Initialize Elastic Beanstalk
+        run: |
+          if [ ! -f .elasticbeanstalk/config.yml ]; then
+            eb init react-demo \
+              --platform "Node.js 24 running on 64bit Amazon Linux 2023" \
+              --region ap-southeast-2
+          fi
+
+      - name: Check if PR environment exists
+        id: check_env
+        run: |
+          if eb list | grep -q "${{ steps.env.outputs.eb_environment }}"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Environment ${{ steps.env.outputs.eb_environment }} exists"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "❌ Environment ${{ steps.env.outputs.eb_environment }} does not exist"
+          fi
+
+      - name: Create PR environment (if needed)
+        if: steps.check_env.outputs.exists == 'false'
+        run: |
+          echo "Creating environment: ${{ steps.env.outputs.eb_environment }}"
+          eb create ${{ steps.env.outputs.eb_environment }} \
+            --single \
+            --instance-types t3.micro \
+            --timeout 20
+
+      - name: Deploy to PR environment
+        run: |
+          echo "🚀 Deploying to ${{ steps.env.outputs.eb_environment }}"
+          eb deploy ${{ steps.env.outputs.eb_environment }} --timeout 20
+
+      - name: Get environment URL
+        id: url
+        run: |
+          URL=$(eb status ${{ steps.env.outputs.eb_environment }} | grep CNAME | awk '{print $2}')
+          echo "url=http://$URL" >> $GITHUB_OUTPUT
+          echo "🌐 Application URL: http://$URL"
+
+      - name: Comment PR with deployment URL
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🚀 PR Environment Deployed!
+
+**Environment:** \`${{ steps.env.outputs.eb_environment }}\`
+**URL:** ${{ steps.url.outputs.url }}
+**Config used:** \`configs/pr/cfg.yml\`
+
+This environment will need to be manually cleaned up when the PR is closed.
+
+To destroy this environment:
+\`\`\`bash
+eb terminate ${{ steps.env.outputs.eb_environment }} --force
+\`\`\`
+`
+            })
+      
+      - name: Deployment summary
+        run: |
+          echo "## 🎉 PR Environment Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** PR #${{ github.event.pull_request.number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**EB Environment:** ${{ steps.env.outputs.eb_environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** ${{ steps.url.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Config:** configs/pr/cfg.yml" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Files Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ dist/ (built React app)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ src/server.js (Express server)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ package.production.json (minimal deps)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ .ebextensions/cfg.yml (from configs/pr/cfg.yml)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ .platform/hooks/" >> $GITHUB_STEP_SUMMARY
+
+  cleanup-pr:
+    name: Cleanup PR Environment
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-southeast-2
+
+      - name: Install EB CLI
+        run: |
+          pip install --upgrade pip
+          pip install awsebcli
+
+      - name: Initialize EB
+        run: |
+          if [ ! -f .elasticbeanstalk/config.yml ]; then
+            eb init react-demo \
+              --platform "Node.js 24 running on 64bit Amazon Linux 2023" \
+              --region ap-southeast-2
+          fi
+
+      - name: Terminate PR environment
+        run: |
+          EB_ENV="react-demo-pr-${{ github.event.pull_request.number }}"
+          echo "Checking if environment $EB_ENV exists..."
+          
+          if eb list | grep -q "$EB_ENV"; then
+            echo "Terminating environment: $EB_ENV"
+            eb terminate $EB_ENV --force --timeout 20
+            echo "✅ Environment $EB_ENV terminated"
+          else
+            echo "Environment $EB_ENV does not exist, nothing to clean up"
+          fi
+
+      - name: Comment PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🧹 PR Environment Cleaned Up\n\n**Environment:** \`react-demo-pr-${{ github.event.pull_request.number }}\` has been terminated.`
+            })
+
