@@ -110,7 +110,6 @@ jobs:
           echo "Creating environment: ${{ steps.env.outputs.eb_environment }}"
           eb create ${{ steps.env.outputs.eb_environment }} \
             --single \
-            --instance-types t3.micro \
             --timeout 20
 
       - name: Deploy to Elastic Beanstalk
