@@ -1,9 +1,9 @@
 /** @type {import('jest').Config} */
-module.exports = {
+export default {
     preset: 'ts-jest',
     testEnvironment: 'jsdom',
     rootDir: '.',
-    setupFilesAfterEnv: ['<rootDir>/src/__tests__/setup.ts'],
+    setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
     moduleNameMapper: {
         '^@/(.*)$': '<rootDir>/src/$1',
         '^@pages/(.*)$': '<rootDir>/src/pages/$1',
@@ -34,7 +34,7 @@ module.exports = {
         '**/__tests__/**/*.[jt]s?(x)',
         '**/?(*.)+(spec|test).[jt]s?(x)',
     ],
-    testPathIgnorePatterns: ['<rootDir>/src/__tests__/setup.ts'],
+    testPathIgnorePatterns: ['<rootDir>/jest.setup.ts'],
     collectCoverageFrom: [
         'src/**/*.{ts,tsx}',
         '!src/**/*.d.ts',
