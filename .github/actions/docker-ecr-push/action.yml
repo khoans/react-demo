@@ -50,9 +50,28 @@ runs:
         aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
         aws-region: ${{ inputs.aws-region }}
 
-    - name: Login to Amazon ECR
+    - name: Get AWS Account ID
+      id: account
+      shell: bash
+      run: |
+        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        echo "account_id=$ACCOUNT_ID" >> $GITHUB_OUTPUT
+        echo "registry=$ACCOUNT_ID.dkr.ecr.${{ inputs.aws-region }}.amazonaws.com" >> $GITHUB_OUTPUT
+
+    - name: Login to Amazon ECR using docker login
       id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
+      shell: bash
+      run: |
+        # Get ECR password
+        ECR_PASSWORD=$(aws ecr get-login-password --region ${{ inputs.aws-region }})
+        
+        # Login to ECR using docker login
+        echo $ECR_PASSWORD | docker login --username AWS --password-stdin ${{ steps.account.outputs.registry }}
+        
+        echo "✅ Docker logged into ECR: ${{ steps.account.outputs.registry }}"
+        
+        # Set output for registry
+        echo "registry=${{ steps.account.outputs.registry }}" >> $GITHUB_OUTPUT
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3

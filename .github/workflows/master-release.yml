@@ -71,8 +71,7 @@ jobs:
         run: |
           echo "📦 Using production configuration"
           cp configs/prod/cfg.yml .ebextensions/cfg.yml
-          echo "Config copied:"
-          cat .ebextensions/cfg.yml
+          echo "Config copied"
 
       - name: Install EB CLI
         run: |
