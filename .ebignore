@@ -11,6 +11,7 @@
 !src/
 !src/server.js
 !package.json
+!package.production.json
 !package-lock.json
 !.ebextensions/
 !.ebextensions/**

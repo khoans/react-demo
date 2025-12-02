@@ -15,16 +15,16 @@
     "serve:dist": "node src/server.js"
   },
   "dependencies": {
+    "express": "^4.22.1"
+  },
+  "devDependencies": {
     "@tanstack/react-query": "^5.90.11",
     "@tanstack/react-router": "^1.139.12",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
-    "express": "^4.22.1",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
-  },
-  "devDependencies": {
+    "react-dom": "^19.2.0",
     "@eslint/js": "^9.39.1",
     "@tailwindcss/vite": "^4.1.17",
     "@tanstack/router-devtools": "^1.139.12",

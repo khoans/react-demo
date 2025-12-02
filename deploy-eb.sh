@@ -114,7 +114,10 @@ create_environment() {
 
 # Function to deploy to EB
 deploy() {
-    print_info "Deploying to Elastic Beanstalk..."
+    # Get environment name from parameter or default to production-env
+    ENV_NAME=${1:-"production-env"}
+
+    print_info "Deploying to Elastic Beanstalk (environment: $ENV_NAME)..."
 
     # Build the application first
     build_app
@@ -130,25 +133,62 @@ deploy() {
     print_info "  ✓ dist/ (built React app)"
     print_info "  ✓ src/server.js (Express server)"
     print_info "  ✓ package.json (dependencies)"
+    print_info "  ✓ package.production.json (minimal server deps)"
     print_info "  ✓ .ebextensions/ (EB configuration)"
+    print_info "  ✓ .platform/hooks/ (npm install hook)"
     echo ""
     print_warning "Source files (src/, vite.config.ts, etc.) will NOT be deployed"
+    print_warning "Server will install ONLY Express (~1 MB, not all deps)"
     echo ""
+
+    # Check if environment exists
+    print_info "Checking for existing environments..."
+    ENV_LIST=$(eb list 2>&1)
+
+    if [ -z "$ENV_LIST" ] || ! echo "$ENV_LIST" | grep -q "$ENV_NAME"; then
+        print_warning "No '$ENV_NAME' environment found!"
+        echo ""
+        read -p "Would you like to create '$ENV_NAME' now? (yes/no): " CREATE_ENV
+
+        if [ "$CREATE_ENV" = "yes" ] || [ "$CREATE_ENV" = "y" ]; then
+            print_info "Creating $ENV_NAME environment..."
+            print_info "This will take 5-7 minutes. Please wait..."
+            echo ""
+
+            eb create "$ENV_NAME" --single
+
+            if [ $? -eq 0 ]; then
+                print_success "Environment created successfully!"
+                echo ""
+                print_info "Now deploying your application..."
+                echo ""
+            else
+                print_error "Failed to create environment"
+                exit 1
+            fi
+        else
+            print_error "Cannot deploy without an environment"
+            print_info "Create one with: ./deploy-eb.sh create $ENV_NAME single"
+            exit 1
+        fi
+    else
+        print_success "Found existing $ENV_NAME environment"
+    fi
 
     # Deploy
     print_info "Uploading to Elastic Beanstalk..."
-    eb deploy
+    eb deploy "$ENV_NAME"
 
     if [ $? -eq 0 ]; then
         print_success "Deployment completed successfully! 🚀"
         echo ""
         print_info "Next steps:"
-        print_info "  - Check status: ./deploy-eb.sh status"
-        print_info "  - View health: ./deploy-eb.sh health"
-        print_info "  - Open app: ./deploy-eb.sh open"
+        print_info "  - Check status: ./deploy-eb.sh status $ENV_NAME"
+        print_info "  - View health: ./deploy-eb.sh health $ENV_NAME"
+        print_info "  - Open app: ./deploy-eb.sh open $ENV_NAME"
     else
         print_error "Deployment failed"
-        print_info "Check logs with: ./deploy-eb.sh logs"
+        print_info "Check logs with: ./deploy-eb.sh logs $ENV_NAME"
         exit 1
     fi
 }
@@ -187,8 +227,9 @@ terminate_env() {
 
 # Function to show environment health
 show_health() {
-    print_info "Checking environment health..."
-    eb health
+    ENV_NAME=${1:-"production-env"}
+    print_info "Checking environment health for: $ENV_NAME..."
+    eb health "$ENV_NAME"
 }
 
 # Function to set environment variables
@@ -231,14 +272,18 @@ Commands:
     ${GREEN}help${NC}            Show this help message
 
 Examples:
-    ./deploy-eb.sh check                  # Check prerequisites
-    ./deploy-eb.sh init                   # Initialize EB
-    ./deploy-eb.sh create my-env          # Create load-balanced environment
-    ./deploy-eb.sh create dev-env single  # Create single instance (cheaper)
-    ./deploy-eb.sh deploy                 # Deploy application
-    ./deploy-eb.sh full                   # Full deployment process
-    ./deploy-eb.sh status                 # Check status
-    ./deploy-eb.sh open                   # Open in browser
+    ./deploy-eb.sh check                      # Check prerequisites
+    ./deploy-eb.sh init                       # Initialize EB
+    ./deploy-eb.sh create my-env              # Create load-balanced environment
+    ./deploy-eb.sh create dev-env single      # Create single instance (cheaper)
+    ./deploy-eb.sh deploy                     # Deploy to production-env (default)
+    ./deploy-eb.sh deploy staging-env         # Deploy to staging-env
+    ./deploy-eb.sh status production-env      # Check production-env status
+    ./deploy-eb.sh health staging-env         # Check staging-env health
+    ./deploy-eb.sh logs dev-env               # View dev-env logs
+    ./deploy-eb.sh open production-env        # Open production-env in browser
+    ./deploy-eb.sh destroy staging-env        # Destroy staging-env
+    ./deploy-eb.sh full                       # Full deployment process
 
 First-time deployment:
     1. ./deploy-eb.sh check
@@ -280,19 +325,19 @@ case "${1:-help}" in
         create_environment "$2"
         ;;
     deploy)
-        deploy
+        deploy "$2"
         ;;
     status)
-        show_status
+        show_status "$2"
         ;;
     health)
-        show_health
+        show_health "$2"
         ;;
     logs)
-        view_logs
+        view_logs "$2"
         ;;
     open)
-        open_app
+        open_app "$2"
         ;;
     setenv)
         set_env_vars
