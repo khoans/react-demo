@@ -108,9 +108,45 @@ jobs:
             --timeout 20
 
       - name: Deploy to Elastic Beanstalk
+        id: deploy
         run: |
-          echo "🚀 Deploying Docker image to production-env"
-          eb deploy production-env --timeout 20
+          echo "🚀 Deploying Docker image to ${{ env.EB_ENVIRONMENT }}"
+          
+          # Get current version before deployment
+          CURRENT_VERSION=$(eb status ${{ env.EB_ENVIRONMENT }} | grep "Deployed Version" | awk '{print $3}')
+          echo "Current version: $CURRENT_VERSION"
+          
+          # Deploy
+          if eb deploy ${{ env.EB_ENVIRONMENT }} --timeout 20; then
+            echo "✅ Deployment successful"
+            echo "deployment_status=success" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Deployment failed"
+            echo "deployment_status=failed" >> $GITHUB_OUTPUT
+            
+            # Try to rollback
+            if [ ! -z "$CURRENT_VERSION" ]; then
+              echo "🔄 Rolling back to version: $CURRENT_VERSION"
+              eb deploy ${{ env.EB_ENVIRONMENT }} --version $CURRENT_VERSION --timeout 10 || echo "Rollback failed"
+            fi
+            
+            exit 1
+          fi
+
+      - name: Verify deployment health
+        if: steps.deploy.outputs.deployment_status == 'success'
+        run: |
+          echo "🔍 Verifying environment health..."
+          sleep 10
+          HEALTH=$(eb status ${{ env.EB_ENVIRONMENT }} | grep Health | awk '{print $2}')
+          echo "Environment health: $HEALTH"
+          
+          if [ "$HEALTH" != "Green" ] && [ "$HEALTH" != "Yellow" ]; then
+            echo "❌ Environment is not healthy: $HEALTH"
+            exit 1
+          fi
+          
+          echo "✅ Environment is healthy"
 
       - name: Get environment URL
         id: url
